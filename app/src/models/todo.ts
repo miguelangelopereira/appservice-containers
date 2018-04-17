@@ -188,7 +188,7 @@ export class TodoModel {
                     text text,
                     done boolean DEFAULT false,
                     createdAt timestamp DEFAULT current_timestamp,
-                    completedAt timestamp
+                    completedAt timestamp NULL
                 );`;
 
         return new Promise<void>((resolve, reject) => {
