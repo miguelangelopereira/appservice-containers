@@ -1,23 +1,23 @@
 import * as debug from "debug";
-import {Client} from "pg";
 import {
-    DEFAULT_CONFIG,
-    PostgresService,
+    MYSQL_CONFIG,
+    MySQLService
 } from "../services";
+import * as mysql from "mysql";
 
 const d = debug("azure-node-todo:TodoModel");
 
-export const schemaName = "azure_node_todo";
+export const schemaName = "todos";
 export const todoTableName = "todo";
 
 /**
  * Model for getting managing todo items
  */
 export class TodoModel {
-    public db: PostgresService;
+    public db: MySQLService;
 
     constructor() {
-        this.db = PostgresService.getDefault();
+        this.db = MySQLService.getDefault();
     }
 
     /**
@@ -26,13 +26,12 @@ export class TodoModel {
     public async initialize() {
         // This can take a while...
         try {
-            await PostgresService.createDatabaseIfNotExists(DEFAULT_CONFIG.database);
-         } catch (e) {
-             d("Failed to create database, might not be able to connect to database if it doesn't already exist");
-             d(e);
-         }
-        const client = await this.db.pool.connect();
-        await this.createSchemaIfNotExists(client);
+            await MySQLService.createDatabaseIfNotExists(process.env.MYSQLDATABASE);
+        } catch (e) {
+            d("Failed to create database, might not be able to connect to database if it doesn't already exist");
+            d(e);
+        }
+        let client = await this.db.getConnection();
         await this.createTableIfNotExists(client);
         client.release();
     }
@@ -40,51 +39,62 @@ export class TodoModel {
     /**
      * Adds a todo item with the given text
      */
-    public async add(text: string): Promise<ITodoItem> {
-        try {
+    public async add(value: string): Promise<ITodoItem> {
+        return new Promise<ITodoItem>(async (resolve, reject) => {
             const query =
-                `
-            INSERT INTO ${schemaName}.${todoTableName} (text) 
-                VALUES ($1) 
-                RETURNING *;
-            `;
+                `INSERT INTO ${schemaName}.${todoTableName} SET ?`;
             d("Adding item to Todo");
-            const results = await this.db.pool.query(query, [text]);
-            d("Added item to Todo");
-            return results.rows[0];
-        } catch (error) {
-            d("Could not add todo item");
-            throw error;
-        }
+            let client = await this.db.getConnection();
+            client.query(query, { text: value }, (err, results, fields) => {
+                if (err) {
+                    d("Could not add todo item");
+                    reject(err.message);
+                } else {
+                    const itemQuery = `SELECT * FROM ${schemaName}.${todoTableName} WHERE id = LAST_INSERT_ID()`
+                    client.query(itemQuery, (itemErr, itemResults, itemFields) => {
+                        if (itemErr) {
+                            d("Could not retrieve added item");
+                            reject(itemErr.message);
+                        } else {
+                            d("Added item to Todo");
+                            resolve(itemResults[0]);
+                        }
+                    });
+                }
+            });
+        });
     }
 
     /**
      * Gets a todo item based on the id provided
      */
     public async get(id: number): Promise<ITodoItem> {
-        try {
+        return new Promise<any>(async (resolve, reject) => {
             d("Fetching todo item: %s", id);
             const query =
-                `SELECT * FROM ${schemaName}.${todoTableName} where id=$1`;
+                `SELECT * FROM ${schemaName}.${todoTableName} where id=?`;
             d("Getting item from todo");
-            const results = await this.db.pool.query(query, [id]);
-            if (results.rows.length < 1) {
-                d("Could not find item in Todo table");
-                return null;
-            }
-            d("Found item in Todo table");
-            return results.rows[0];
-        } catch (error) {
-            d("Failed to fetch Todo item for id: %s", id);
-            throw error;
-        }
+            var client = await this.db.getConnection();
+            const results = client.query(query, [id], (err, results, fields) => {
+                if (err) {
+                    d("Failed to fetch Todo item for id: %s", id);
+                    reject(err.message);
+                } else if (results && results.length === 0) {
+                    d("Could not find item in Todo table");
+                    resolve(null);
+                } else {
+                    d("Found item in Todo table");
+                    resolve(results[0]);
+                }
+            });
+        });
     }
 
     /**
      * Get all todo items
      */
-    public async getAll(page: number, pageSize: number) {
-        try {
+    public getAll(page: number, pageSize: number): Promise<any> {
+        return new Promise<any>(async (resolve, reject) => {
             page = page || 1;
             pageSize = pageSize || 100;
             const offset = (page - 1) * pageSize;
@@ -97,113 +107,104 @@ export class TodoModel {
                     LIMIT ${pageSize} 
                     OFFSET ${offset};
                 `;
-            const results = await this.db.pool.query(query);
-            d("Returning todo items");
-            return results.rows;
-        } catch (error) {
-            d("Failed to fetch all todo items");
-            throw error;
-        }
+            var client = await this.db.getConnection();
+            client.query(query, (err, results, fields) => {
+                if (err) {
+                    d("Failed to fetch all todo items");
+                    reject(err);
+                } else {
+                    d("Returning todo items");
+                    resolve(results);
+                }
+            });
+        });
     }
 
     /**
      * Toggles done on and off for a given todo item
      */
-    public async toggleDone(id: number): Promise<ITodoItem[]> {
-        try {
+    public async toggleDone(id: number): Promise<ITodoItem> {
+        return new Promise<ITodoItem>(async (resolve, reject) => {
             const query =
                 `UPDATE ${schemaName}.${todoTableName} 
                 SET done = NOT done, completedAt = now()
-                WHERE id = $1 
-                RETURNING *;`;
+                WHERE id = ?`;
             d("Toggling todo item done");
-            const results = await this.db.pool.query(query, [id]);
-            d("Toggled todo item");
-            return results.rows[0];
-        } catch (error) {
-            d("Failed to toggle done on id: %s", id);
-            throw error;
-        }
+            var client = await this.db.getConnection();
+            client.query(query, [id], (err, results, fields) => {
+                if (err) {
+                    d("Failed to toggle done on id: %s", id);
+                    reject(err.message);
+                } else {
+                    const itemQuery = `SELECT * FROM ${schemaName}.${todoTableName} WHERE id = ?`
+                    client.query(itemQuery, [id], (itemErr, itemResults, itemFields) => {
+                        if (itemErr) {
+                            d("Could not retrieve updated item");
+                            reject(itemErr.message);
+                        } else {
+                            d("Toggled todo item");
+                            resolve(itemResults[0]);
+                        }
+                    });
+                }
+            });
+        });
     }
 
     /**
      * Removes a todo item based on id
      */
     public async remove(id: number): Promise<ITodoItem> {
-        try {
+        return new Promise<ITodoItem>(async (resolve, reject) => {
             const query =
                 `DELETE FROM ${schemaName}.${todoTableName}
-                WHERE id = $1
-                RETURNING *;`;
+                WHERE id = ?`;
             d("Removing Todo item");
-            const results = await this.db.pool.query(query, [id]);
-            d("Removed Todo item");
-            return results.rows[0];
-        } catch (error) {
-            d("Failed to delete item with id: %s", id);
-            throw error;
-        }
+            var client = await this.db.getConnection();
+            client.query(query, [id], (err, results, fields) => {
+                if (err) {
+                    d("Failed to delete item with id: %s", id);
+                    reject(err.message);
+                } else {
+                    d("Removed Todo item");
+                    const removedItem: ITodoItem = {
+                        id: id,
+                        text: null,
+                        done: null,
+                        createdAt: null,
+                        completedAt: null
+                    };
+                    resolve(removedItem);
+                }
+            });
+        });
     }
 
-    private async createSchemaIfNotExists(client: Client) {
-        try {
-            const schemaquery =
-                `SELECT schema_name
-                FROM   information_schema.schemata 
-                WHERE  schema_name = $1;`;
-            d("Checking to see if schema %s exists", schemaName);
-            let results = await client.query(schemaquery, [schemaName]);
-            if (results.rowCount > 0) {
-                d("Schema %s already exists", schemaName);
-                return;
-            } else {
-                d("Creating Schema");
-                const createschema =
-                    `CREATE SCHEMA ${schemaName};`;
-                d("running query: \n%s", createschema);
-                results = await client.query(createschema);
-                d("Succeeded to create table");
-                return;
-            }
-        } catch (error) {
-            d("Could not initialize Todo model: %s", error.message);
-            throw error;
-        }
-    }
-
-    private async createTableIfNotExists(client: Client) {
-        try {
-            const tablequery =
-                `SELECT table_name, table_schema
-                FROM   information_schema.tables 
-                WHERE  table_schema = $1
-                AND    table_name = $2`;
-            d("Checking to see if table %s.%s exists", schemaName, todoTableName);
-            let results = await client.query(tablequery, [schemaName, todoTableName]);
-            if (results.rowCount > 0) {
-                d("Table %s already exists", schemaName);
-                return;
-            } else {
-                d("Creating table");
-                const createTable =
-                    `CREATE TABLE ${schemaName}.${todoTableName} (
-                    id serial PRIMARY KEY,
+    private createTableIfNotExists(client: mysql.PoolConnection): Promise<void> {
+        d("Creating table");
+        const createTable =
+            `CREATE TABLE IF NOT EXISTS ${schemaName}.${todoTableName} (
+                    id int not NULL AUTO_INCREMENT PRIMARY KEY,
                     text text,
                     done boolean DEFAULT false,
                     createdAt timestamp DEFAULT current_timestamp,
                     completedAt timestamp
                 );`;
-                d("running query: \n%s", createTable);
-                results = await client.query(createTable);
-                d("Succeeded to create table");
-                return;
-            }
-        } catch (error) {
-            d("Could not initialize Todo model: %s", error.message);
-            throw error;
-        }
-    }
 
+        return new Promise<void>((resolve, reject) => {
+            d("running query: \n%s", createTable);
+            client.query(createTable, (err, results, fields) => {
+                if (err) {
+                    d("Could not initialize Todo model: %s", err.message);
+                    reject(err);
+                    return;
+                } else {
+                    d("Succeeded to create table");
+                    resolve();
+                }
+            });
+        });
+    }
 }
 
 export interface ITodoItem {

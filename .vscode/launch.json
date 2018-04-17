@@ -5,51 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "args": [
-                "-p",
-                "./sample",
-                "-l",
-                "silly",
-                "./sample"
-            ],
-            "cwd": "${workspaceRoot}",
+            "cwd": "${workspaceRoot}/app",
             "env": {
                 "NODE_ENV": "development",
                 "DEBUG": "azure-functions-pack:*",
-                "PGUSER": "demo",
-                "PGPASSWORD": "De7Mm12345!#",
-                "PGDATABASE": "contosotodo-dev-postgres.postgres",
-                "PGSERVER": "contosotodo-dev-postgres.postgres.database.azure.com"
+                "PGUSER": "",
+                "PGPASSWORD": "",
+                "PGDATABASE": "",
+                "PGSERVER": "",
+                "MYSQLUSER": "demo@builddemomysql",
+                "MYSQLPASSWORD": "De7Mm12345!#",
+                "MYSQLDATABASE": "todos",
+                "MYSQLSERVER": "builddemomysql.mysql.database.azure.com"
             },
             "name": "DEBUG",
             "outFiles": [
-                "${workspaceRoot}/lib/**"
+                "${workspaceRoot}/app/lib/**"
             ],
-            "preLaunchTask": "build",
-            "program": "${workspaceRoot}/src/main.ts",
-            "request": "launch",
-            "runtimeArgs": [
-                "--nolazy"
-            ],
-            "runtimeExecutable": null,
-            "sourceMaps": true,
-            "stopOnEntry": false,
-            "type": "node"
-        },
-        {
-            "args": [
-                "-p",
-                "./sample",
-                "./sample"
-            ],
-            "cwd": "${workspaceRoot}",
-            "env": {},
-            "name": "PRODUCTION",
-            "outFiles": [
-                "${workspaceRoot}/lib/**"
-            ],
-            "preLaunchTask": "build",
-            "program": "${workspaceRoot}/src/main.ts",
+            "program": "${workspaceRoot}/app/bin/www",
             "request": "launch",
             "runtimeArgs": [
                 "--nolazy"
